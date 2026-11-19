@@ -29,6 +29,8 @@ const DEFAULT_FILL = ".";
 const DEFAULT_MODELS = "^gpt-(\\d+)(?:\\.(\\d+))?";
 const DEFAULT_MIN_VERSION = "6.2";
 const DEFAULT_LOG = join(homedir(), ".pi", "agent", "logs", "instructions-cache-guard.jsonl");
+const DEFAULT_DISPLAY: Display = "both";
+const DEFAULT_WIDGET_TTL = 10000;
 const STATUS_KEY = "instructions-cache-guard";
 
 export interface GuardConfig {
@@ -37,8 +39,17 @@ export interface GuardConfig {
 	modelPattern: RegExp;
 	minVersion: [number, number];
 	logPath: string;
+	/** 展示方式：footer 状态、编辑器上方 widget、两者、或关闭。 */
+	display: Display;
+	/** widget 自动清除的毫秒数，0 表示常驻。 */
+	widgetTtl: number;
+	/** display 是否启用（保留旧字段语义）。 */
 	status: boolean;
 }
+
+export type Display = "status" | "widget" | "both" | "off";
+
+const DISPLAYS: readonly Display[] = ["status", "widget", "both", "off"];
 
 /** 读取环境变量，优先新名字，其次旧名字（PI_TCUNI_FILL_*），便于平滑升级。 */
 function env(envs: Record<string, string | undefined>, name: string, legacy?: string): string | undefined {
@@ -69,13 +80,21 @@ export function resolveConfig(envs: Record<string, string | undefined> = process
 						.filter((item) => item !== ""),
 				);
 	const logSetting = env(envs, "PICG_LOG", "PI_TCUNI_FILL_DEBUG") ?? DEFAULT_LOG;
+	const rawDisplay = env(envs, "PICG_DISPLAY");
+	const display: Display = (env(envs, "PICG_STATUS") ?? "on") === "off"
+		? "off"
+		: DISPLAYS.includes(rawDisplay as Display)
+			? (rawDisplay as Display)
+			: DEFAULT_DISPLAY;
 	return {
 		providers,
 		fill: env(envs, "PICG_FILL", "PI_TCUNI_FILL") ?? DEFAULT_FILL,
 		modelPattern: new RegExp(env(envs, "PICG_MODELS", "PI_TCUNI_FILL_MODELS") ?? DEFAULT_MODELS),
 		minVersion: parseVersion(env(envs, "PICG_MIN_VERSION") ?? DEFAULT_MIN_VERSION),
 		logPath: logSetting,
-		status: (env(envs, "PICG_STATUS") ?? "on") !== "off",
+		display,
+		widgetTtl: Math.max(0, Number(env(envs, "PICG_WIDGET_TTL") ?? DEFAULT_WIDGET_TTL) || 0),
+		status: display !== "off",
 	};
 }
 
@@ -251,9 +270,35 @@ export default function instructionsCacheGuard(pi: ExtensionAPI): void {
 				// 日志失败不影响会话
 			}
 		}
-		if (!config.status) return;
+		if (config.display === "off") return;
 		const label = current.action === "fill" ? "fill" : current.action === "skip-version" ? "skip" : "kept";
-		ctx.ui.setStatus(STATUS_KEY, `guard ${label} · in ${fmt(input)} · cache ${fmt(cacheRead)} (${pct(cacheRead, cacheRead + input)})`);
+		const text = `guard ${label} · in ${fmt(input)} · cache ${fmt(cacheRead)} (${pct(cacheRead, cacheRead + input)})`;
+		// 自定义 footer 扩展（如 pi-grok-theme）会按优先级丢弃第三方状态，窄终端下 footer 可能看不到，
+		// 因此默认同时写一份 widget；widget 在编辑器上方，不受 footer 挤占影响。
+		if (config.display === "status" || config.display === "both") {
+			try {
+				ctx.ui.setStatus(STATUS_KEY, text);
+			} catch {
+				// footer 不可用时忽略
+			}
+		}
+		if (config.display === "widget" || config.display === "both") {
+			try {
+				ctx.ui.setWidget(STATUS_KEY, [text]);
+				if (config.widgetTtl > 0) {
+					const timer = setTimeout(() => {
+						try {
+							ctx.ui.setWidget(STATUS_KEY, undefined);
+						} catch {
+							// 会话已结束
+						}
+					}, config.widgetTtl);
+					timer.unref?.();
+				}
+			} catch {
+				// widget 不可用时忽略
+			}
+		}
 	});
 
 	pi.registerCommand("instructions-guard", {

@@ -111,7 +111,9 @@ pi install ./pi-instructions-cache-guard
 | `PICG_MODELS` | `^gpt-(\d+)(?:\.(\d+))?` | 从模型 id 提取主/次版本号的正则 |
 | `PICG_MIN_VERSION` | `6.2` | 生效的最低模型版本 |
 | `PICG_LOG` | `~/.pi/agent/logs/instructions-cache-guard.jsonl` | 日志路径；设为 `off` 关闭 |
-| `PICG_STATUS` | `on` | 设为 `off` 关闭 footer 状态显示 |
+| `PICG_DISPLAY` | `both` | 展示位置：`status`（footer）/`widget`（编辑器上方）/`both`/`off` |
+| `PICG_WIDGET_TTL` | `10000` | widget 自动消失的毫秒数，`0` 表示常驻 |
+| `PICG_STATUS` | `on` | 设为 `off` 等同于 `PICG_DISPLAY=off`（旧名字，保留兼容） |
 
 把网关配成自定义 provider 名（例如 `tcuni`）时，需要显式指定白名单，否则不会生效：
 
@@ -123,7 +125,9 @@ export PICG_FILL_PROVIDERS=tcuni,tcuni-luna
 
 ## 看效果
 
-1. **footer 状态**：每次请求结束后显示 `guard fill · in 4.8k · cache 11.0k (69%)`。`fill` 表示拦截生效，`skip` 表示模型版本未达阈值，`kept` 表示字段本来就有内容。
+1. **状态行**：每次请求结束后显示 `guard fill · in 4.8k · cache 11.0k (69%)`。`fill` 表示拦截生效，`skip` 表示模型版本未达阈值，`kept` 表示字段本来就有内容。
+
+   默认同时写 footer 状态和编辑器上方的 widget。之所以要两份：装了自定义 footer 扩展（例如 `pi-grok-theme`）后，footer 会按优先级丢弃第三方状态，终端不宽时这一行经常被先挤掉；widget 不在 footer 里，不受影响。widget 默认 10 秒后自动消失，`PICG_WIDGET_TTL=0` 可让它常驻，`PICG_DISPLAY=status` 则回到只写 footer。
 2. **`/instructions-guard`**：汇总日志中各类请求的次数、输入均值与缓存读取均值，并给出日志路径。
 3. **`/instructions-guard clear`**：清空日志重新统计。
 4. **JSONL 日志**：每行一条记录，`kind: "request"` 记录注入前的字段状态，`kind: "usage"` 记录该次请求的 `input` / `cacheRead` / `cacheWrite`，可直接对比启用前后的差异。

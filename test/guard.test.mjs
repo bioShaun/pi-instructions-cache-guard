@@ -21,6 +21,7 @@ function freshDir(name) {
 
 function makeCtx(provider, modelId, cwd) {
 	const statuses = [];
+	const widgets = [];
 	const notes = [];
 	return {
 		ctx: {
@@ -28,10 +29,12 @@ function makeCtx(provider, modelId, cwd) {
 			model: { provider, id: modelId },
 			ui: {
 				setStatus: (key, text) => statuses.push([key, text]),
+				setWidget: (key, lines) => widgets.push([key, lines]),
 				notify: (text, level) => notes.push([text, level]),
 			},
 		},
 		statuses,
+		widgets,
 		notes,
 	};
 }
@@ -87,6 +90,12 @@ test("配置项默认值只守卫 openai，并兼容旧环境变量", () => {
 	assert.deepEqual(cfg.minVersion, [6, 2]);
 	assert.equal(resolveConfig({ PICG_FILL_PROVIDERS: "none" }).providers.size, 0);
 	assert.equal(resolveConfig({ PI_TCUNI_FILL: "N/A" }).fill, "N/A");
+	assert.equal(cfg.display, "both");
+	assert.equal(cfg.widgetTtl, 10000);
+	assert.equal(resolveConfig({ PICG_DISPLAY: "widget" }).display, "widget");
+	assert.equal(resolveConfig({ PICG_DISPLAY: "乱七八糟" }).display, "both");
+	assert.equal(resolveConfig({ PICG_STATUS: "off" }).display, "off");
+	assert.equal(resolveConfig({ PICG_WIDGET_TTL: "0" }).widgetTtl, 0);
 });
 
 test("自定义 provider 白名单可用环境变量覆盖默认值", () => {
@@ -124,7 +133,8 @@ test("请求与用量都写入日志，并把效果显示在 footer", () => {
 	process.env.PICG_LOG = logFile;
 	const { pi, handlers } = makePi();
 	guard(pi);
-	const { ctx, statuses } = makeCtx("openai", "gpt-6.2-sol", dir);
+	process.env.PICG_WIDGET_TTL = "0";
+	const { ctx, statuses, widgets } = makeCtx("openai", "gpt-6.2-sol", dir);
 
 	handlers.get("before_provider_request")(
 		{ payload: { input: [{ role: "developer" }, { role: "user" }] } },
@@ -150,6 +160,34 @@ test("请求与用量都写入日志，并把效果显示在 footer", () => {
 	assert.equal(usage.cacheRead, 11008);
 	assert.match(statuses.at(-1)[1], /fill/);
 	assert.match(statuses.at(-1)[1], /4\.8k/);
+	assert.match(widgets.at(-1)[1][0], /guard fill/, "widget 与 footer 应显示同一行");
+	delete process.env.PICG_WIDGET_TTL;
+});
+
+test("display=status 时只写 footer，display=off 时都不写", () => {
+	const dir = freshDir("display");
+	process.env.PICG_LOG = "off";
+	const { pi, handlers } = makePi();
+	guard(pi);
+	const payload = { payload: { input: [{ role: "developer" }] } };
+	const usage = { message: { role: "assistant", usage: { input: 10, output: 1, cacheRead: 0 } } };
+
+	process.env.PICG_DISPLAY = "status";
+	const onlyStatus = makeCtx("openai", "gpt-6.2-sol", dir);
+	handlers.get("before_provider_request")(payload, onlyStatus.ctx);
+	handlers.get("message_end")(usage, onlyStatus.ctx);
+	assert.equal(onlyStatus.statuses.length, 1);
+	assert.equal(onlyStatus.widgets.length, 0);
+
+	process.env.PICG_DISPLAY = "off";
+	const none = makeCtx("openai", "gpt-6.2-sol", dir);
+	handlers.get("before_provider_request")(payload, none.ctx);
+	handlers.get("message_end")(usage, none.ctx);
+	assert.equal(none.statuses.length, 0);
+	assert.equal(none.widgets.length, 0);
+
+	delete process.env.PICG_DISPLAY;
+	rmSync(dir, { recursive: true, force: true });
 });
 
 test("统计命令汇总 fill 与 skip 的输入差异", () => {
