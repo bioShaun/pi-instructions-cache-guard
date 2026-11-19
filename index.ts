@@ -135,18 +135,34 @@ interface LogRow {
 
 /** 把 JSONL 日志汇总成命令输出：按动作分组统计请求数与平均输入/缓存。 */
 export function summarizeLog(rows: LogRow[], logPath?: string): string {
-	const groups = new Map<string, { requests: number; samples: number; input: number; cache: number }>();
+	interface Group {
+		requests: number;
+		samples: number;
+		input: number;
+		cache: number;
+		/** 有缓存可读的样本，单独统计命中率，避免单轮请求把平均值拉到失真。 */
+		warm: number;
+		warmInput: number;
+		warmCache: number;
+	}
+	const empty = (): Group => ({ requests: 0, samples: 0, input: 0, cache: 0, warm: 0, warmInput: 0, warmCache: 0 });
+	const groups = new Map<string, Group>();
 	for (const row of rows) {
 		if (row.kind !== "usage" || !row.action) continue;
-		const group = groups.get(row.action) ?? { requests: 0, samples: 0, input: 0, cache: 0 };
+		const group = groups.get(row.action) ?? empty();
 		group.samples += 1;
 		group.input += row.input ?? 0;
 		group.cache += row.cacheRead ?? 0;
+		if ((row.cacheRead ?? 0) > 0) {
+			group.warm += 1;
+			group.warmInput += row.input ?? 0;
+			group.warmCache += row.cacheRead ?? 0;
+		}
 		groups.set(row.action, group);
 	}
 	for (const row of rows) {
 		if (row.kind !== "request" || !row.action) continue;
-		const group = groups.get(row.action) ?? { requests: 0, samples: 0, input: 0, cache: 0 };
+		const group = groups.get(row.action) ?? empty();
 		group.requests += 1;
 		groups.set(row.action, group);
 	}
@@ -159,12 +175,17 @@ export function summarizeLog(rows: LogRow[], logPath?: string): string {
 		const group = groups.get(action);
 		if (!group) continue;
 		const avgInput = group.samples > 0 ? group.input / group.samples : Number.NaN;
-		const avgCache = group.samples > 0 ? group.cache / group.samples : Number.NaN;
 		const label =
 			action === "fill" ? "已拦截注入" : action === "skip-filled" ? "字段本已非空" : "版本未达阈值";
-		lines.push(
-			`  ${label}（${action}）：${group.requests} 次，输入均值 ${fmt(avgInput)}，缓存读取均值 ${fmt(avgCache)}（${pct(avgCache, avgCache + avgInput)}）`,
-		);
+		lines.push(`  ${label}（${action}）：${group.requests} 次，输入均值 ${fmt(avgInput)}`);
+		const cold = group.samples - group.warm;
+		if (group.warm > 0) {
+			const rate = pct(group.warmCache, group.warmCache + group.warmInput);
+			lines.push(`    有缓存可读：${group.warm} 次，命中率 ${rate}（缓存 ${fmt(group.warmCache)} / 输入 ${fmt(group.warmInput)}）`);
+		}
+		if (cold > 0) {
+			lines.push(`    首轮无缓存：${cold} 次（无缓存可读，命中率按 0 计，故不计入上面的命中率）`);
+		}
 	}
 	if (logPath) lines.push(`  日志：${logPath}`);
 	return lines.join("\n");

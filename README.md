@@ -128,7 +128,15 @@ export PICG_FILL_PROVIDERS=tcuni,tcuni-luna
 1. **状态行**：每次请求结束后显示 `guard fill · in 4.8k · cache 11.0k (69%)`。`fill` 表示拦截生效，`skip` 表示模型版本未达阈值，`kept` 表示字段本来就有内容。
 
    默认同时写 footer 状态和编辑器上方的 widget。之所以要两份：装了自定义 footer 扩展（例如 `pi-grok-theme`）后，footer 会按优先级丢弃第三方状态，终端不宽时这一行经常被先挤掉；widget 不在 footer 里，不受影响。widget 默认 10 秒后自动消失，`PICG_WIDGET_TTL=0` 可让它常驻，`PICG_DISPLAY=status` 则回到只写 footer。
-2. **`/instructions-guard`**：汇总日志中各类请求的次数、输入均值与缓存读取均值，并给出日志路径。
+2. **`/instructions-guard`**：汇总日志中各类请求的次数、输入均值，并把命中率拆成「有缓存可读」与「首轮无缓存」两组——单轮请求没有缓存可读，混在一起算平均值会失真：
+
+   ```
+   instructions-cache-guard：共 7 次请求
+     已拦截注入（fill）：7 次，输入均值 3.4k
+       有缓存可读：3 次，命中率 84%（缓存 13.6k / 输入 2.6k）
+       首轮无缓存：4 次（无缓存可读，命中率按 0 计，故不计入上面的命中率）
+     日志：/home/tcuni-claw/.pi/agent/logs/instructions-cache-guard.jsonl
+   ```
 3. **`/instructions-guard clear`**：清空日志重新统计。
 4. **JSONL 日志**：每行一条记录，`kind: "request"` 记录注入前的字段状态，`kind: "usage"` 记录该次请求的 `input` / `cacheRead` / `cacheWrite`，可直接对比启用前后的差异。
 

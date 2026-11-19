@@ -211,6 +211,24 @@ test("统计命令汇总 fill 与 skip 的输入差异", () => {
 	rmSync(dir, { recursive: true, force: true });
 });
 
+test("统计命令把命中率拆成有缓存与首轮两组，避免单轮请求拉低均值", () => {
+	const dir = freshDir("stats-split");
+	const logFile = join(dir, "guard.jsonl");
+	const rows = [
+		...Array.from({ length: 4 }, () => ({ kind: "usage", action: "fill", input: 5376, cacheRead: 0 })),
+		{ kind: "usage", action: "fill", input: 2048, cacheRead: 3328 },
+	];
+	writeFileSync(logFile, rows.map((r) => JSON.stringify(r)).join("\n") + "\n");
+
+	const summary = summarizeLog(readLog(logFile));
+	assert.match(summary, /共 0 次请求|共 \d+ 次请求/);
+	assert.match(summary, /已拦截注入（fill）：0 次，输入均值 4\.7k/);
+	assert.match(summary, /有缓存可读：1 次，命中率 62%/);
+	assert.match(summary, /首轮无缓存：4 次/);
+
+	rmSync(dir, { recursive: true, force: true });
+});
+
 test("关闭日志时既不写文件也不报错", () => {
 	const dir = freshDir("off");
 	const logFile = join(dir, "guard.jsonl");
