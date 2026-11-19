@@ -45,7 +45,7 @@
    │
    ▼
 三个条件全部满足才动手：
-   ├── provider 在白名单里（默认 tcuni、tcuni-luna）
+   ├── provider 在白名单里（默认 openai）
    ├── 模型版本 >= 6.2
    └── instructions 去空白后为空
    │
@@ -106,12 +106,18 @@ pi install ./pi-instructions-cache-guard
 
 | 变量 | 默认值 | 说明 |
 |---|---|---|
-| `PICG_FILL_PROVIDERS` | `tcuni,tcuni-luna` | 生效的 provider 白名单；设为 `none` 即完全禁用 |
+| `PICG_FILL_PROVIDERS` | `openai` | 生效的 provider 白名单；设为 `none` 即完全禁用 |
 | `PICG_FILL` | `.` | 写入 `instructions` 的哨兵文本 |
 | `PICG_MODELS` | `^gpt-(\d+)(?:\.(\d+))?` | 从模型 id 提取主/次版本号的正则 |
 | `PICG_MIN_VERSION` | `6.2` | 生效的最低模型版本 |
 | `PICG_LOG` | `~/.pi/agent/logs/instructions-cache-guard.jsonl` | 日志路径；设为 `off` 关闭 |
 | `PICG_STATUS` | `on` | 设为 `off` 关闭 footer 状态显示 |
+
+把网关配成自定义 provider 名（例如 `tcuni`）时，需要显式指定白名单，否则不会生效：
+
+```bash
+export PICG_FILL_PROVIDERS=tcuni,tcuni-luna
+```
 
 旧名字 `PI_TCUNI_FILL_PROVIDERS` / `PI_TCUNI_FILL` / `PI_TCUNI_FILL_MODELS` / `PI_TCUNI_FILL_DEBUG` 仍被识别，便于从早期单文件版本平滑迁移。
 
@@ -125,8 +131,8 @@ pi install ./pi-instructions-cache-guard
 日志示例：
 
 ```json
-{"ts":"2026-11-19T02:10:00.000Z","kind":"request","provider":"tcuni","model":"gpt-6.2-sol","action":"fill","instructionsBefore":null,"fill":".","inputItems":3}
-{"ts":"2026-11-19T02:10:04.000Z","kind":"usage","provider":"tcuni","model":"gpt-6.2-sol","action":"fill","input":4839,"output":120,"cacheRead":11008,"cacheWrite":0,"cacheHitRate":"69%"}
+{"ts":"2026-11-19T02:10:00.000Z","kind":"request","provider":"openai","model":"gpt-6.2-sol","action":"fill","instructionsBefore":null,"fill":".","inputItems":3}
+{"ts":"2026-11-19T02:10:04.000Z","kind":"usage","provider":"openai","model":"gpt-6.2-sol","action":"fill","input":4839,"output":120,"cacheRead":11008,"cacheWrite":0,"cacheHitRate":"69%"}
 ```
 
 ## 边界

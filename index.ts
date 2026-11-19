@@ -14,6 +14,9 @@
  * Related:
  * - Pi 扩展钩子 `before_provider_request`（改写请求体）、`message_end`（读取 usage）
  * - sub2api `applyInstructions`（trim 后为空即注入）、OpenAI Responses 缓存行为
+ *
+ * 默认只守卫 provider 名为 `openai` 的请求；把网关配成自定义 provider 名（如 `tcuni`）时，
+ * 用 `PICG_FILL_PROVIDERS` 指定白名单。
  */
 import { appendFileSync, mkdirSync, readFileSync, truncateSync } from "node:fs";
 import { homedir } from "node:os";
@@ -21,7 +24,7 @@ import { dirname, join } from "node:path";
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
-const DEFAULT_PROVIDERS = "tcuni,tcuni-luna";
+const DEFAULT_PROVIDERS = "openai";
 const DEFAULT_FILL = ".";
 const DEFAULT_MODELS = "^gpt-(\\d+)(?:\\.(\\d+))?";
 const DEFAULT_MIN_VERSION = "6.2";
