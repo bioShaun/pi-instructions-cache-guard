@@ -48,19 +48,26 @@
 
 ## 安装
 
-作为全局扩展（符号链接到源码，改完即时生效）：
+作为 Pi 包从 GitHub 安装（推荐）：
 
 ```bash
-ln -sf /path/to/pi-instructions-cache-guard/index.ts ~/.pi/agent/extensions/pi-instructions-cache-guard.ts
+pi install git:github.com/bioShaun/pi-instructions-cache-guard
 ```
 
-或者作为 Pi 包安装（需要发布到 npm 或可用的 git 地址）：
+升级到最新提交：
 
 ```bash
-pi install /path/to/pi-instructions-cache-guard
+pi update --extensions
 ```
 
-安装后在 Pi 里执行 `/reload`。
+用 `pi list` 确认已安装，`pi remove git:github.com/bioShaun/pi-instructions-cache-guard` 可移除。安装后无需重启，`/reload` 即可生效。
+
+直接从源码开发时，也可以把本地目录当作包安装（该方式不会自动跟随 GitHub 的更新）：
+
+```bash
+git clone git@github.com:bioShaun/pi-instructions-cache-guard.git
+pi install ./pi-instructions-cache-guard
+```
 
 ## 配置
 

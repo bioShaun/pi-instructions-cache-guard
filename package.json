@@ -4,6 +4,10 @@
   "description": "Stop Responses gateways from injecting default instructions, so the system prompt keeps hitting prompt cache on GPT-6.2+",
   "type": "module",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/bioShaun/pi-instructions-cache-guard.git"
+  },
   "pi": {
     "extensions": [
       "./index.ts"
