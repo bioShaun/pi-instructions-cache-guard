@@ -4,10 +4,27 @@
 
 ## 问题
 
-从 GPT-6.2 起，Responses 请求的顶层 `instructions` **不参与 prompt cache**。而 Pi 的 `openai-responses` 实现本来就不发这个字段（系统提示词放在 `input` 首条 `developer` 消息里，可正常缓存），于是出现了这条链路：
+从 GPT-6.2 起，Responses 请求的顶层 `instructions` **不参与 prompt cache**。Pi 的 `openai-responses` 实现本来就不发这个字段（系统提示词放在 `input` 首条 `developer` 消息里，可正常缓存），于是中间层的网关就能把一份本来可缓存的请求变成不可缓存：
 
 ```
-Pi ──(不发 instructions)──> 网关（如 sub2api）──(注入 ~5.4k token 默认 Codex 指令)──> OpenAI
+  Pi
+   │  input[0]  developer 系统提示词  ~4.8k tok   ← 第 2 轮起命中缓存
+   │  input[1..] 对话历史 + 工具定义              ← 同上，属于缓存前缀
+   │  instructions       （Pi 不发这个字段）
+   ▼
+  网关（例：sub2api）：instructions 去除空白后为空 → 注入默认 Codex 指令
+   │
+   │  instructions  默认 Codex 指令  ~5.4k tok    ← GPT-6.2 不缓存，每轮全价
+   ▼
+  OpenAI Responses
+```
+
+于是每一轮请求的账单结构变成这样（数值取自探测脚本）：
+
+```
+# 第 2 轮起，单位 tok
+启用前   input  4,839（已缓存）+ instructions  5,409（不缓存）= 10,248 新输入
+启用后   input  4,839（已缓存）+ instructions      1（不缓存）=  4,840 新输入
 ```
 
 被注入的内容每轮都按未缓存输入计费。同一个 Pi 会话（`gpt-6.2-sol`，同一句提示词）实测：
