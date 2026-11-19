@@ -1,0 +1,29 @@
+{
+  "name": "pi-instructions-cache-guard",
+  "version": "0.1.0",
+  "description": "Stop Responses gateways from injecting default instructions, so the system prompt keeps hitting prompt cache on GPT-6.2+",
+  "type": "module",
+  "license": "MIT",
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  },
+  "scripts": {
+    "test": "node --test"
+  },
+  "files": [
+    "index.ts",
+    "README.md"
+  ],
+  "keywords": [
+    "pi-extension",
+    "openai-responses",
+    "prompt-cache",
+    "gpt-6.2",
+    "sub2api"
+  ],
+  "engines": {
+    "node": ">=22.19"
+  }
+}

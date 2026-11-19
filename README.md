@@ -1,0 +1,90 @@
+# pi-instructions-cache-guard
+
+阻止 OpenAI Responses 网关在 `instructions` 为空时注入自己的默认指令，从而保住 GPT-6.2 及以上的 prompt cache。
+
+## 问题
+
+从 GPT-6.2 起，Responses 请求的顶层 `instructions` **不参与 prompt cache**。而 Pi 的 `openai-responses` 实现本来就不发这个字段（系统提示词放在 `input` 首条 `developer` 消息里，可正常缓存），于是出现了这条链路：
+
+```
+Pi ──(不发 instructions)──> 网关（如 sub2api）──(注入 ~5.4k token 默认 Codex 指令)──> OpenAI
+```
+
+被注入的内容每轮都按未缓存输入计费。同一个 Pi 会话（`gpt-6.2-sol`，同一句提示词）实测：
+
+| | `usage.input_tokens` |
+|---|---|
+| 禁用本扩展（网关注入生效） | 10,791 |
+| 启用本扩展 | 5,382 |
+
+差值 5,409 token 即被挡掉的默认 Codex 指令；探测脚本里同一组对照为 10,247 → 4,839。
+
+## 做法
+
+在 `before_provider_request` 钩子里，对匹配的 provider / 模型，仅在 `instructions` 去除空白后为空时写入一个哨兵字符 `.`：
+
+- 网关判断条件是「trim 后为空」，所以任意非空字符都能阻止注入；
+- 选择 `.` 而不是真实文本，避免给模型增加额外指令、与自己或 Pi 的系统提示词冲突；
+- 系统提示词继续留在 `input` 里，缓存前缀不变。
+
+6.2 以前该字段可正常缓存，因此默认只处理 `>= 6.2` 的模型。
+
+## 安装
+
+作为全局扩展（符号链接到源码，改完即时生效）：
+
+```bash
+ln -sf /path/to/pi-instructions-cache-guard/index.ts ~/.pi/agent/extensions/pi-instructions-cache-guard.ts
+```
+
+或者作为 Pi 包安装（需要发布到 npm 或可用的 git 地址）：
+
+```bash
+pi install /path/to/pi-instructions-cache-guard
+```
+
+安装后在 Pi 里执行 `/reload`。
+
+## 配置
+
+全部通过环境变量，使用默认值即可；每次请求都会重新读取，改完不必重启 Pi。
+
+| 变量 | 默认值 | 说明 |
+|---|---|---|
+| `PICG_FILL_PROVIDERS` | `tcuni,tcuni-luna` | 生效的 provider 白名单；设为 `none` 即完全禁用 |
+| `PICG_FILL` | `.` | 写入 `instructions` 的哨兵文本 |
+| `PICG_MODELS` | `^gpt-(\d+)(?:\.(\d+))?` | 从模型 id 提取主/次版本号的正则 |
+| `PICG_MIN_VERSION` | `6.2` | 生效的最低模型版本 |
+| `PICG_LOG` | `~/.pi/agent/logs/instructions-cache-guard.jsonl` | 日志路径；设为 `off` 关闭 |
+| `PICG_STATUS` | `on` | 设为 `off` 关闭 footer 状态显示 |
+
+旧名字 `PI_TCUNI_FILL_PROVIDERS` / `PI_TCUNI_FILL` / `PI_TCUNI_FILL_MODELS` / `PI_TCUNI_FILL_DEBUG` 仍被识别，便于从早期单文件版本平滑迁移。
+
+## 看效果
+
+1. **footer 状态**：每次请求结束后显示 `guard fill · in 4.8k · cache 11.0k (69%)`。`fill` 表示拦截生效，`skip` 表示模型版本未达阈值，`kept` 表示字段本来就有内容。
+2. **`/instructions-guard`**：汇总日志中各类请求的次数、输入均值与缓存读取均值，并给出日志路径。
+3. **`/instructions-guard clear`**：清空日志重新统计。
+4. **JSONL 日志**：每行一条记录，`kind: "request"` 记录注入前的字段状态，`kind: "usage"` 记录该次请求的 `input` / `cacheRead` / `cacheWrite`，可直接对比启用前后的差异。
+
+日志示例：
+
+```json
+{"ts":"2026-11-19T02:10:00.000Z","kind":"request","provider":"tcuni","model":"gpt-6.2-sol","action":"fill","instructionsBefore":null,"fill":".","inputItems":3}
+{"ts":"2026-11-19T02:10:04.000Z","kind":"usage","provider":"tcuni","model":"gpt-6.2-sol","action":"fill","input":4839,"output":120,"cacheRead":11008,"cacheWrite":0,"cacheHitRate":"69%"}
+```
+
+## 边界
+
+- 只改请求体里的一个字段，不修改 `node_modules`、不 patch Pi。
+- 不解决网关自身行为：若某个网关在 `instructions` 非空时仍注入，本扩展无效。
+- 不解决上游缓存不稳定：`gpt-6.2` 出现过同一会话后续轮次 `cached_tokens` 归零的情况，与注入无关。
+- 去掉默认 Codex 指令后，模型行为以 Pi 的系统提示词为准；需要对照时用 `PICG_FILL_PROVIDERS=none` 跑同一任务。
+
+## 测试
+
+```bash
+node --test
+```
+
+8 个用例覆盖版本判定、空白判定（与网关的 trim 语义一致）、配置兼容、注入拦截、日志与 footer、统计汇总、关闭日志、命令输出与清空。
