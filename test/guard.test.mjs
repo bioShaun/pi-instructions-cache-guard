@@ -190,6 +190,37 @@ test("display=status 时只写 footer，display=off 时都不写", () => {
 	rmSync(dir, { recursive: true, force: true });
 });
 
+test("display=notify 改用通知展示，PICG_DEBUG 记录 UI 调用结果", () => {
+	const dir = freshDir("notify");
+	const logFile = join(dir, "guard.jsonl");
+	process.env.PICG_LOG = logFile;
+	process.env.PICG_DISPLAY = "notify";
+	process.env.PICG_DEBUG = "1";
+	const { pi, handlers } = makePi();
+	guard(pi);
+	const { ctx, notes, statuses, widgets } = makeCtx("openai", "gpt-6.2-sol", dir);
+	handlers.get("before_provider_request")({ payload: { input: [{ role: "developer" }] } }, ctx);
+	handlers.get("message_end")(
+		{ message: { role: "assistant", usage: { input: 2048, output: 5, cacheRead: 3328 } } },
+		ctx,
+	);
+
+	assert.equal(notes.length, 1, "应通过 notify 展示一行");
+	assert.match(notes[0][0], /guard fill/);
+	assert.equal(statuses.length, 0);
+	assert.equal(widgets.length, 0);
+
+	const ui = readLog(logFile).find((r) => r.kind === "ui");
+	assert.ok(ui, "PICG_DEBUG=1 时应写入 UI 调试记录");
+	assert.equal(ui.display, "notify");
+	assert.equal(ui.notify, "ok");
+
+	delete process.env.PICG_DEBUG;
+	delete process.env.PICG_DISPLAY;
+	delete process.env.PICG_LOG;
+	rmSync(dir, { recursive: true, force: true });
+});
+
 test("统计命令汇总 fill 与 skip 的输入差异", () => {
 	const dir = freshDir("stats");
 	const logFile = join(dir, "guard.jsonl");

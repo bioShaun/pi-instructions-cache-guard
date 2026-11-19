@@ -45,11 +45,13 @@ export interface GuardConfig {
 	widgetTtl: number;
 	/** display 是否启用（保留旧字段语义）。 */
 	status: boolean;
+	/** 写入 UI 调用结果，用于排查状态行不显示的问题。 */
+	debug: boolean;
 }
 
-export type Display = "status" | "widget" | "both" | "off";
+export type Display = "status" | "widget" | "both" | "notify" | "off";
 
-const DISPLAYS: readonly Display[] = ["status", "widget", "both", "off"];
+const DISPLAYS: readonly Display[] = ["status", "widget", "both", "notify", "off"];
 
 /** 读取环境变量，优先新名字，其次旧名字（PI_TCUNI_FILL_*），便于平滑升级。 */
 function env(envs: Record<string, string | undefined>, name: string, legacy?: string): string | undefined {
@@ -95,6 +97,7 @@ export function resolveConfig(envs: Record<string, string | undefined> = process
 		display,
 		widgetTtl: Math.max(0, Number(env(envs, "PICG_WIDGET_TTL") ?? DEFAULT_WIDGET_TTL) || 0),
 		status: display !== "off",
+		debug: (env(envs, "PICG_DEBUG") ?? "") === "1",
 	};
 }
 
@@ -296,16 +299,27 @@ export default function instructionsCacheGuard(pi: ExtensionAPI): void {
 		const text = `guard ${label} · in ${fmt(input)} · cache ${fmt(cacheRead)} (${pct(cacheRead, cacheRead + input)})`;
 		// 自定义 footer 扩展（如 pi-grok-theme）会按优先级丢弃第三方状态，窄终端下 footer 可能看不到，
 		// 因此默认同时写一份 widget；widget 在编辑器上方，不受 footer 挤占影响。
+		const uiResult: Record<string, string> = { display: config.display };
+		if (config.display === "notify") {
+			try {
+				ctx.ui.notify(text, "info");
+				uiResult.notify = "ok";
+			} catch (error) {
+				uiResult.notify = `error:${String(error)}`;
+			}
+		}
 		if (config.display === "status" || config.display === "both") {
 			try {
 				ctx.ui.setStatus(STATUS_KEY, text);
-			} catch {
-				// footer 不可用时忽略
+				uiResult.status = "ok";
+			} catch (error) {
+				uiResult.status = `error:${String(error)}`;
 			}
 		}
 		if (config.display === "widget" || config.display === "both") {
 			try {
 				ctx.ui.setWidget(STATUS_KEY, [text]);
+				uiResult.widget = "ok";
 				if (config.widgetTtl > 0) {
 					const timer = setTimeout(() => {
 						try {
@@ -316,8 +330,15 @@ export default function instructionsCacheGuard(pi: ExtensionAPI): void {
 					}, config.widgetTtl);
 					timer.unref?.();
 				}
+			} catch (error) {
+				uiResult.widget = `error:${String(error)}`;
+			}
+		}
+		if (config.debug && config.logPath && config.logPath !== "off") {
+			try {
+				write(config.logPath, { ts: new Date().toISOString(), kind: "ui", ...uiResult });
 			} catch {
-				// widget 不可用时忽略
+				// 调试输出失败不影响会话
 			}
 		}
 	});

@@ -111,9 +111,10 @@ pi install ./pi-instructions-cache-guard
 | `PICG_MODELS` | `^gpt-(\d+)(?:\.(\d+))?` | 从模型 id 提取主/次版本号的正则 |
 | `PICG_MIN_VERSION` | `6.2` | 生效的最低模型版本 |
 | `PICG_LOG` | `~/.pi/agent/logs/instructions-cache-guard.jsonl` | 日志路径；设为 `off` 关闭 |
-| `PICG_DISPLAY` | `both` | 展示位置：`status`（footer）/`widget`（编辑器上方）/`both`/`off` |
+| `PICG_DISPLAY` | `both` | 展示方式：`status`（footer）/`widget`（编辑器上方）/`both`/`notify`（弹通知）/`off` |
 | `PICG_WIDGET_TTL` | `10000` | widget 自动消失的毫秒数，`0` 表示常驻 |
 | `PICG_STATUS` | `on` | 设为 `off` 等同于 `PICG_DISPLAY=off`（旧名字，保留兼容） |
+| `PICG_DEBUG` | `0` | 设为 `1` 时把每次 UI 调用结果写进日志（`kind:"ui"`），排查状态行不显示 |
 
 把网关配成自定义 provider 名（例如 `tcuni`）时，需要显式指定白名单，否则不会生效：
 
